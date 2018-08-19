@@ -5,21 +5,57 @@
  * Implements publication period related actions on cockpit collections.
  */
 
-$app->on('collections.find.after', function ($name, &$data) use ($app) {
+/**
+ * Validates the publication period field against current date.
+ *
+ * @param  array $field
+ *   The publication period composed by start and end keys.
+ *
+ * @return bool
+ *   True if field match criteria.
+ */
+function checkPublicationPeriod(array $field) {
+  $start = $field['start'] ?? '';
+  $end = $field['end'] ?? '';
+  $now = time();
+
+  if (empty($start) && empty($end)) {
+    return TRUE;
+  }
+  elseif (!empty($start) && empty($end)) {
+    if ($now > strtotime($start)) {
+      return TRUE;
+    }
+  }
+  elseif (empty($start) && !empty($end)) {
+    if ($now < strtotime($end)) {
+      return TRUE;
+    }
+  }
+  else {
+    if ($now > strtotime($start) && $now < strtotime($end)) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+$app->on('collections.find.before', function ($name, &$options) use ($app) {
+
   // Get the collection.
-  $collection = $app->module('collections')->collection($name);
-  // Iterate over the collection and check that we have the publication field.
+  $collection = $this->module('collections')->collection($name);
+
   foreach ($collection['fields'] as $field) {
+
     if ($field['type'] == 'publicationperiod') {
-      $name = $field['name'];
-      // Field is present, check collection data entries.
-      foreach ($data as $idx => $entry) {
-        if (isset($entry[$name]) && !$app->module('publicationperiod')->validate($entry[$name])) {
-          unset($data[$idx]);
-        }
-      }
+      $options['filter']['$and'] = [
+         ["{$field['name']}" => ['$exists' => TRUE]],
+         ["{$field['name']}.start" => ['$exists' => TRUE]],
+         ["{$field['name']}.end" => ['$exists' => TRUE]],
+         ["{$field['name']}" => ['$fn' => 'checkPublicationPeriod']],
+      ];
+
       break;
     }
   }
-
 });
