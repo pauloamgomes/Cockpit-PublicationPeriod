@@ -52,10 +52,59 @@ $app->on('collections.find.before', function ($name, &$options) use ($app) {
          ["{$field['name']}" => ['$exists' => TRUE]],
          ["{$field['name']}.start" => ['$exists' => TRUE]],
          ["{$field['name']}.end" => ['$exists' => TRUE]],
-         ["{$field['name']}" => ['$fn' => 'checkPublicationPeriod']],
       ];
+
+      // If driver is mongodb we need to use $where condition.
+      if ($app->storage->type === 'mongodb') {
+        $options['filter']['$and'][] = ['$where' => getWhereCondition($field['name'])];
+      }
+      // Otherwise for sqlite we can rely on the $fn callback.
+      else {
+        $options['filter']['$and'][$field['name']] = ['$fn' => 'checkPublicationPeriod'];
+      }
 
       break;
     }
   }
 });
+
+function getWhereCondition($field_name) {
+  return <<<JS
+function() {
+  field = this.{$field_name};
+  start = field.start || null;
+  end = field.end || null;
+  currentDate = new Date();
+  now = currentDate.getTime();
+
+  if (start) {
+    t = start.split(/[- :]/);
+    date = new Date(t[0], t[1]-1, t[2], t[3], t[4], "00");
+    startTime = date.getTime();
+  }
+
+  if (end) {
+    t = end.split(/[- :]/);
+    date = new Date(t[0], t[1]-1, t[2], t[3], t[4], "00");
+    endTime = date.getTime();
+  }
+
+  if (!start && !end) {
+    return true;
+  } else if (start !== '' && !end) {
+    if (now > startTime) {
+      return true;
+    }
+  } else if (!start && end) {
+    if (now < endTime) {
+      return true;
+    }
+  } else {
+    if (now > startTime && now < endTime) {
+      return true;
+    }
+  }
+  return false;
+}
+JS;
+}
