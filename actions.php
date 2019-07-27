@@ -40,32 +40,9 @@ function checkPublicationPeriod(array $field) {
   return FALSE;
 }
 
-$app->on('collections.find.before', function ($name, &$options) use ($app) {
-
-  // Get the collection.
-  $collection = $this->module('collections')->collection($name);
-
-  foreach ($collection['fields'] as $field) {
-    if ($field['type'] == 'publicationperiod') {
-
-      $options['filter']['$and'][] = ["{$field['name']}" => ['$exists' => TRUE]];
-      $options['filter']['$and'][] = ["{$field['name']}.start" => ['$exists' => TRUE]];
-      $options['filter']['$and'][] = ["{$field['name']}.end" => ['$exists' => TRUE]];
-
-      // If driver is mongodb we need to use $where condition.
-      if ($app->storage->type === 'mongodb') {
-        $options['filter']['$and'][] = ['$where' => getWhereCondition($field['name'])];
-      }
-      // Otherwise for sqlite we can rely on the $fn callback.
-      else {
-        $options['filter']['$and'][$field['name']] = ['$fn' => 'checkPublicationPeriod'];
-      }
-
-      break;
-    }
-  }
-});
-
+/**
+ * $where function for mongodb.
+ */
 function getWhereCondition($field_name) {
   return <<<JS
 function() {
@@ -106,3 +83,30 @@ function() {
 }
 JS;
 }
+
+// Hook into collections.find.before event.
+$app->on('collections.find.before', function ($name, &$options) use ($app) {
+
+  // Get the collection.
+  $collection = $this->module('collections')->collection($name);
+
+  foreach ($collection['fields'] as $field) {
+    if ($field['type'] == 'publicationperiod') {
+
+      $options['filter']['$and'][] = ["{$field['name']}" => ['$exists' => TRUE]];
+      $options['filter']['$and'][] = ["{$field['name']}.start" => ['$exists' => TRUE]];
+      $options['filter']['$and'][] = ["{$field['name']}.end" => ['$exists' => TRUE]];
+
+      // If driver is mongodb we need to use $where condition.
+      if ($app->storage->type === 'mongodb') {
+        $options['filter']['$and'][] = ['$where' => getWhereCondition($field['name'])];
+      }
+      // Otherwise for sqlite we can rely on the $fn callback.
+      else {
+        $options['filter']['$and'][] = ["{$field['name']}" => ['$fn' => 'checkPublicationPeriod']];
+      }
+
+      break;
+    }
+  }
+});
